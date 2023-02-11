@@ -2,15 +2,17 @@ import datetime
 from _decimal import Decimal
 from dataclasses import dataclass
 
-from PIL import Image
+from PIL.Image import Image
+from pdf2image import convert_from_bytes
 from pyzbar.pyzbar import decode
+from pyzbar.wrapper import ZBarSymbol
 
 from boleto.exceptions import InvalidBarcode
 
 
 @dataclass(frozen=True)
 class Boleto:
-    code: str
+    barcode: str
     bank_code: int
     currency_code: int
     checksum: int
@@ -29,22 +31,24 @@ class Boleto:
         return Decimal(self.raw_value) / 100
 
     @staticmethod
-    def decode_image(path):
-        """Returns all Boleto codes from an image."""
-        return _decode_image(path)
+    def from_barcode(value: str):
+        return _parse_barcode(value)
 
     @staticmethod
-    def from_barcode(data):
-        return _parse_barcode(data)
-
-    @staticmethod
-    def from_image(path):
-        barcodes = _decode_image(path)
+    def from_image(image: Image):
+        barcodes = _get_barcodes_from_image(image)
         return [_parse_barcode(b) for b in barcodes]
 
+    @staticmethod
+    def from_pdf(pdf: bytes):
+        images = convert_from_bytes(pdf)
+        for img in images:
+            return Boleto.from_image(img)
 
-def _decode_image(path: str) -> list[str]:
-    return [decoded.data.decode() for decoded in decode(Image.open(path))]
+
+def _get_barcodes_from_image(image: Image) -> list[str]:
+    a = [decoded for decoded in decode(image, symbols=[ZBarSymbol.I25])]
+    return [i.data.decode() for i in a]
 
 
 def _parse_barcode(data: str) -> Boleto:
@@ -59,7 +63,7 @@ def _parse_barcode(data: str) -> Boleto:
     free_field = data[19:44]
 
     return Boleto(
-        code=data,
+        barcode=data,
         bank_code=bank_code,
         checksum=checksum,
         currency_code=currency_code,
